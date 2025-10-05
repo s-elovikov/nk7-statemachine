@@ -9,7 +9,7 @@ namespace Nk7.StateMachine
     public sealed class StateMachine<TTrigger> : IStateMachine<TTrigger>
         where TTrigger : Enum
     {
-        public readonly struct StateMachineTrigger
+        public readonly ref struct StateMachineTrigger
         {
             private readonly IStateMachine<TTrigger> _stateMachine;
             private readonly TTrigger _trigger;
