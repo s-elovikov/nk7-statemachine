@@ -4,10 +4,10 @@ Lightweight finite state machine for Unity built around type-safe triggers, payl
 
 ## Features
 - Strongly typed `enum` triggers and payload objects guarantee compile-time transition safety
-- Asynchronous `OnBeforeEnter/OnEnter/OnBeforeExit/OnExit` compatible with `Cysharp.Threading.Tasks`
+- Asynchronous `OnBeforeEnter/OnEnter/OnBeforeExit/OnExit` lifecycle powered by `Cysharp.Threading.Tasks`
+- Fluent registration API with `StateMachineTrigger` chaining when calling `Register().AllowTransition(...)`
 - Transition guard rails: throws when a disallowed transition is requested
-- Every transition creates a new DI scope and automatically releases dependencies of the previous state
-- `RegisterStateMachine` extension for seamless registration inside `nk7-container` (define `NK7_CONTAINER`)
+- Optional `nk7-container` integration that wires scopes via `IScopeService` and exposes a `RegisterStateMachine` extension
 - AOT-friendly constructor (`UnityEngine.Scripting.Preserve`) and zero allocations during registration chains
 
 ## Table of Contents
@@ -119,7 +119,22 @@ public sealed class GameRoot : RootContainer
 await stateMachine.PushAsync(GameTrigger.Boot, new BootPayload("Menu"), cancellationToken);
 ```
 
-When using the state machine outside of a DI container, provide your own `IFactoryService<IState<TTrigger>>` and `IScopeService`, then pass them to the `StateMachine<TTrigger>` constructor.
+Outside of `nk7-container` supply an `IStatesFactoryService<IState<GameTrigger>>` implementation that creates state instances:
+
+```csharp
+public sealed class ActivatorStatesFactory : IStatesFactoryService<IState<GameTrigger>>
+{
+    public IState<GameTrigger> GetService(Type serviceType) =>
+        (IState<GameTrigger>)Activator.CreateInstance(serviceType);
+}
+```
+
+```csharp
+var stateMachine = new StateMachine<GameTrigger>(new ActivatorStatesFactory());
+
+stateMachine.Register<BootState>(GameTrigger.Boot)
+    .AllowTransition(GameTrigger.Menu);
+```
 
 ## State Lifecycle
 - `OnBeforeEnterAsync` — runs before exiting the current state, handy for preloading
@@ -131,16 +146,14 @@ When using the state machine outside of a DI container, provide your own `IFacto
 Each method awaits the returned `UniTask` before moving to the next step in the sequence.
 
 ## Dependency and Scope Management
-- Every `PushAsync` creates a new scope via `IScopeService`
-- The previous state releases its scope after `OnExitAsync`, automatically disposing scoped dependencies
-- Register states as `Scoped` if you want them recreated on every entry
+- **With `nk7-container`**: every `PushAsync` creates a new scope via `IScopeService`, the previous state releases its scope after `OnExitAsync`, and states registered as `Scoped` are re-created on every entry
+- **Without the container**: the lifetime comes from your `IStatesFactoryService`; return fresh instances if you need per-transition cleanup or reuse cached singletons and dispose them manually
 
 ## Transition Control
 - Every trigger requires an explicit `stateMachine.Register<State>(trigger)`
-- Allowed transitions are configured with `AllowTransition(from, to)` or chained `.AllowTransition(nextTrigger)`
+- `AllowTransition(from, to)` (or chained `.AllowTransition(nextTrigger)`) returns the lightweight `StateMachineTrigger` struct, letting you fluently describe the graph
 - Attempting an unregistered or disallowed transition throws `InvalidOperationException` with current and target triggers in the message
 
 ## Requirements
 - Unity 2021.2+
 - `com.cysharp.unitask` 2.3.0 (declared in `package.json`)
-- For `nk7-container` integration you need the `NK7_CONTAINER` define (the container adds it automatically)
