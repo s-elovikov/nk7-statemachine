@@ -1,8 +1,11 @@
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using System.Threading;
-using Nk7.Container;
 using System;
+
+#if NK7_CONTAINER
+using Nk7.Container;
+#endif
 
 namespace Nk7.StateMachine
 {
@@ -31,20 +34,36 @@ namespace Nk7.StateMachine
         public IState<TTrigger> CurrentState { get; private set; }
         public TTrigger CurrentTrigger { get; private set; }
 
+#if NK7_CONTAINER
         private readonly IFactoryService<IState<TTrigger>> _statesFactory;
         private readonly IScopeService _scopeService;
+#else
+        private readonly IStatesFactoryService<IState<TTrigger>> _statesFactory;
+#endif
 
         private readonly Dictionary<TTrigger, HashSet<TTrigger>> _transitions;
         private readonly Dictionary<TTrigger, Type> _stateTypes;
 
+#if NK7_CONTAINER
         private int _scope;
+#endif
 
+#if NK7_CONTAINER
         [UnityEngine.Scripting.Preserve]
-        public StateMachine(IFactoryService<IState<TTrigger>> statesFactory, IScopeService scopeService)
+        public StateMachine(IFactoryService<IState<TTrigger>> statesFactory, IScopeService scopeService) : this()
         {
             _statesFactory = statesFactory;
             _scopeService = scopeService;
+        }
+#else
+        public StateMachine(IStatesFactoryService<IState<TTrigger>> statesFactory) : this()
+        {
+            _statesFactory = statesFactory;
+        }
+#endif
 
+        public StateMachine()
+        {
             _transitions = new Dictionary<TTrigger, HashSet<TTrigger>>();
             _stateTypes = new Dictionary<TTrigger, Type>();
         }
@@ -77,7 +96,9 @@ namespace Nk7.StateMachine
                 return;
             }
 
+#if NK7_CONTAINER
             int newScope = _scopeService.CreateScope();
+#endif
             bool currentStateIsExist = CurrentState != null;
 
             var state = _statesFactory.GetService(stateType);
@@ -93,13 +114,17 @@ namespace Nk7.StateMachine
             if (currentStateIsExist)
             {
                 await CurrentState.OnExitAsync(CurrentTrigger, trigger, cancellationToken);
+#if NK7_CONTAINER
                 _scopeService.ReleaseScope(_scope);
+#endif
             }
 
             CurrentState = payloadedState;
             CurrentTrigger = trigger;
 
+#if NK7_CONTAINER
             _scope = newScope;
+#endif
 
             await payloadedState.OnEnterAsync(trigger, payload, cancellationToken);
         }
