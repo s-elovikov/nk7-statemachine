@@ -12,6 +12,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.nk7.container",
+            "expression": "1.0.0",
+            "define": "NK7_CONTAINER"
+        }
+    ],
     "noEngineReferences": false
 }
