@@ -3,11 +3,11 @@
 Легковесная конечная state machine для Unity, построенная вокруг типобезопасных триггеров, payload-состояний и асинхронного жизненного цикла на UniTask.
 
 ## Возможности
-- Типизированные триггеры `enum` и payload-объекты, гарантируют compile-time безопасность переходов
-- Асинхронные `OnBeforeEnter/OnEnter/OnBeforeExit/OnExit`, совместимые с `Cysharp.Threading.Tasks`
+- Типизированные триггеры `enum` и payload-объекты гарантируют compile-time безопасность переходов
+- Асинхронный жизненный цикл `OnBeforeEnter/OnEnter/OnBeforeExit/OnExit` на `Cysharp.Threading.Tasks`
+- Флюентный API регистрации с возвратом `StateMachineTrigger` для построения графа переходов без аллокаций
 - Контроль допустимых переходов: выброс исключения при попытке неразрешённого перехода
-- Каждый переход создаёт новый DI-scope; зависимости предыдущего состояния освобождаются автоматически
-- Расширение `RegisterStateMachine` для автоматической регистрации в `nk7-container` (define `NK7_CONTAINER`)
+- Опциональная интеграция с `nk7-container`: управляет scope через `IScopeService` и предоставляет расширение `RegisterStateMachine`
 - AOT-дружественный конструктор (`UnityEngine.Scripting.Preserve`) и отсутствие аллокаций на цепочках регистрации
 
 ## Содержание
@@ -119,7 +119,22 @@ public sealed class GameRoot : RootContainer
 await stateMachine.PushAsync(GameTrigger.Boot, new BootPayload("Menu"), cancellationToken);
 ```
 
-При явном использовании без DI-контейнера реализуйте `IFactoryService<IState<TTrigger>>` и `IScopeService`, затем передайте их в конструктор `StateMachine<TTrigger>`.
+Без `nk7-container` предоставьте реализацию `IStatesFactoryService<IState<GameTrigger>>`, которая создаёт экземпляры состояний:
+
+```csharp
+public sealed class ActivatorStatesFactory : IStatesFactoryService<IState<GameTrigger>>
+{
+    public IState<GameTrigger> GetService(Type serviceType) =>
+        (IState<GameTrigger>)Activator.CreateInstance(serviceType);
+}
+```
+
+```csharp
+var stateMachine = new StateMachine<GameTrigger>(new ActivatorStatesFactory());
+
+stateMachine.Register<BootState>(GameTrigger.Boot)
+    .AllowTransition(GameTrigger.Menu);
+```
 
 ## Жизненный цикл состояния
 - `OnBeforeEnterAsync` — вызывается до выхода из текущего состояния, удобно для предзагрузки.
@@ -131,16 +146,14 @@ await stateMachine.PushAsync(GameTrigger.Boot, new BootPayload("Menu"), cancella
 Методы вызываются последовательно, все возвращаемые `UniTask` дожидаются завершения перед переходом к следующему шагу.
 
 ## Управление зависимостями и scope
-- На каждый `PushAsync` создаётся новый scope через `IScopeService`.
-- Предыдущее состояние освобождает scope после `OnExitAsync`, что автоматически освобождает зависимости этого scope.
-- Состояния можно регистрировать как `Scoped` — они будут пересоздаваться при каждом входе.
+- **С `nk7-container`**: каждый `PushAsync` создаёт новый scope через `IScopeService`, предыдущее состояние освобождает свой scope после `OnExitAsync`, `Scoped`-регистрация пересоздаёт состояния при каждом входе.
+- **Без контейнера**: жизненным циклом управляет ваша реализация `IStatesFactoryService`; возвращайте новые экземпляры для очистки между переходами или кэшируйте их и освобождайте вручную.
 
 ## Контроль переходов
-- Для каждого триггера требуется регистрация `stateMachine.Register<State>(trigger)`.
-- Допустимые переходы описываются через `AllowTransition(from, to)` или цепочки `.AllowTransition(nextTrigger)`.
+- Для каждого триггера требуется явная регистрация `stateMachine.Register<State>(trigger)`.
+- `AllowTransition(from, to)` (или цепочка `.AllowTransition(nextTrigger)`) возвращает лёгкий `StateMachineTrigger`, позволяя флюентно описывать граф переходов.
 - Попытка перехода без регистрации типа или без разрешённого перехода приводит к `InvalidOperationException` с описанием текущего и целевого триггера.
 
 ## Требования
 - Unity 2021.2+
 - `com.cysharp.unitask` 2.3.0
-- Для интеграции с `nk7-container` необходим define `NK7_CONTAINER` (контейнер добавляет его автоматически)
